@@ -1,3 +1,16 @@
+/*****************************************
+******************************************
+
+This is a fairly old codebase
+Some of the code could be rewritten
+Read and understand it first
+
+http://www.jwz.org/doc/cadt.html
+
+******************************************
+******************************************/
+
+
 function Model() {
 
 	var root = this;
@@ -13,6 +26,55 @@ function Model() {
 	// ------------------------------------------------------------------
 	// Upgrade information
 	// ------------------------------------------------------------------
+
+	// http://stackoverflow.com/questions/6832596/how-to-compare-software-version-number-using-js-only-number
+
+	function versionCompare(v1, v2, options) {
+		var lexicographical = options && options.lexicographical,
+			zeroExtend = options && options.zeroExtend,
+			v1parts = v1.split('.'),
+			v2parts = v2.split('.');
+
+		function isValidPart(x) {
+			return (lexicographical ? /^\d+[A-Za-z]*$/ : /^\d+$/).test(x);
+		}
+
+		if (!v1parts.every(isValidPart) || !v2parts.every(isValidPart)) {
+			return NaN;
+		}
+
+		if (zeroExtend) {
+			while (v1parts.length < v2parts.length) v1parts.push("0");
+			while (v2parts.length < v1parts.length) v2parts.push("0");
+		}
+
+		if (!lexicographical) {
+			v1parts = v1parts.map(Number);
+			v2parts = v2parts.map(Number);
+		}
+
+		for (var i = 0; i < v1parts.length; ++i) {
+			if (v2parts.length == i) {
+				return 1;
+			}
+
+			if (v1parts[i] == v2parts[i]) {
+				continue;
+			}
+			else if (v1parts[i] > v2parts[i]) {
+				return 1;
+			}
+			else {
+				return -1;
+			}
+		}
+
+		if (v1parts.length != v2parts.length) {
+			return -1;
+		}
+
+		return 0;
+	}
 
 	var checkVersion = DAL.get("currentVersion");
 	var currentVersion = chrome.app.getDetails().version;
@@ -110,17 +172,50 @@ function Model() {
     };
 
 	// ------------------------------------------------------------------
-	// Future testing to use this method
+	// 2.1.0 Upgrade DAL
 	// ------------------------------------------------------------------
 
-    if (checkVersion !== currentVersion) {
+    if (DAL.get('showimagesincomments') == null) {
+
+    	DAL.set("showimagesincomments", false);
+    	DAL.set("enablenotifications", false);
+    	DAL.set("useslideshow", false);
+
+    };
+
+	// ------------------------------------------------------------------
+	// Future testing to use this method
+	// ------------------------------------------------------------------
+    
+    if (checkVersion && checkVersion !== currentVersion) {
 
     	if (checkVersion === "2.0.5") {
     		DAL.set("notifications.winmeme", false);
     	}
 
-    	DAL.set("currentVersion", currentVersion);
+    	if (versionCompare("2.1.0", checkVersion) > 0) {
+
+    		// Old schema
+    		// Utils 1.3 doesn't have remove item
+    		localStorage.removeItem("notifications.winmeme");
+
+    		// Using dot notation affects DAL retrieval
+    		DAL.set("notifications.update-2_1_0", {
+
+    			id: "update-2_1_0",
+    			read: false,
+    			title: "imgur Extension updated",
+    			message: "See what's new in 2.1.0",
+    			url: "https://goo.gl/xzQL4z"
+
+    		});
+
+    	}
+
     }
+
+    DAL.set("currentVersion", currentVersion);
+
 
 
 	function encode(str) {
@@ -139,13 +234,13 @@ function Model() {
 
 		var notifications = DAL.get("notifications"),
 			retArr = [];
-		
+
 		if (notifications) {
-
+			
 			for (var notification in notifications) {
-
-				if (!notifications[notification]) {
-					retArr.push(notification);
+				
+				if (!notifications[notification].read) {
+					retArr.push(notifications[notification]);
 				}
 
 			}
@@ -157,7 +252,9 @@ function Model() {
 	}
 
 	this.setNotified = function (key) {
-		DAL.set("notifications." + key, true);
+		var item = DAL.get("notifications." + key);
+		item.read = true;
+		DAL.set("notifications." + key, item);
 	}
 
 	// ------------------------------------------------------------------
@@ -612,7 +709,7 @@ function Model() {
     	};
 
     	this.fetchUserImages = function (offset) {
-    		console.log(offset);
+    		
     		var req = new signedRequest("GET", "https://api.imgur.com/3/account/me/images?page=" + offset)
     		root.requestManager.queue(req);
 
@@ -667,6 +764,33 @@ function Model() {
 
     	};
 
+    	this.fetchNotifications = function () {
+
+    		var req = new signedRequest("GET", "https://api.imgur.com/3/notification");
+    		root.requestManager.queue(req);
+
+    		return req.evtD;
+
+    	}
+
+    	this.setNotificationAsRead = function (id) {
+
+    		var req = new signedRequest("PUT", "https://api.imgur.com/3/notification/" + id);
+    		root.requestManager.queue(req);
+
+    		return req.evtD;
+
+    	}
+
+    	this.setNotificationsAsRead = function (ids) {
+
+    		var req = new signedRequest("PUT", "https://api.imgur.com/3/notification/", "ids=" + ids.join(','));
+    		root.requestManager.queue(req);
+
+    		return req.evtD;
+
+    	}
+
     	this.fetchGalleryProfile = function () {
 
     	    var req = new signedRequest("GET", "https://api.imgur.com/3/account/me/gallery_profile");
@@ -696,6 +820,18 @@ function Model() {
     	};
 
 
+    	this.fetchImageComments = function (imageId) {
+
+    		var req = new signedRequest("GET", "https://api.imgur.com/3/gallery/image/" + imageId + "/comments/");
+    		root.requestManager.queue(req);
+
+    		return req.evtD;
+
+    	};
+
+    	
+
+
         
 
     	this.makeAlbum = function (title) {
@@ -715,9 +851,6 @@ function Model() {
 
     	this.sendImage = function (album, image) {
 
-			// Don't track the actual image, just that they have triggered this method
-    		_gaq.push(['_trackEvent', 'Image', 'Send Image', 'Authenticated']);
-
     		var postStr = "image=" + encode(image) + "&type=base64";
 
     		if (album !== '_userAlbum' && album !== '_userFavouritesAlbum') {
@@ -733,19 +866,27 @@ function Model() {
 
     	this.favouriteImage = function (ID) {
 
-    	    _gaq.push(['_trackEvent', 'Image', 'Favourite Image', 'Authenticated']);
-
     	    var req = new signedRequest("POST", "https://api.imgur.com/3/image/" + ID + "/favorite");
     	    root.requestManager.queue(req);
 
     	    return req.evtD;
 
     	};
+		
+    	/*
+		Not implemented because the API doesn't handle it
+
+    	this.unfavouriteImage = function (ID) {
+
+    		var req = new signedRequest("DELETE", "https://api.imgur.com/3/image/" + ID + "/favorite");
+    		root.requestManager.queue(req);
+
+    		return req.evtD;
+
+    	};
+		*/
 
     	this.sendImageURL = function (album, url) {
-
-    		// Don't track the actual image, just that they have triggered this method
-    		_gaq.push(['_trackEvent', 'Image', 'Send Image URL', 'Authenticated']);
 
     		var postStr = "image=" + encode(url) + "&type=url";
 
@@ -762,9 +903,6 @@ function Model() {
 
 
     	this.deleteImage = function (deletehash) {
-
-    		// Don't track the actual image, just that they have triggered this method
-    		_gaq.push(['_trackEvent', 'Image', 'Delete Image', 'Authenticated']);
 
     		var req = new signedRequest("DELETE", "https://api.imgur.com/3/image/" + deletehash);
     		root.requestManager.queue(req);
@@ -867,9 +1005,6 @@ function Model() {
 
     	this.sendImage = function (image) {
 
-    		// Don't track the actual image, just that they have triggered this method
-    		_gaq.push(['_trackEvent', 'Image', 'Send Image', 'Unauthenticated']);
-
 			// Strange how we don't encode the image here to make it work
     		var req = new signedRequest("POST", "https://api.imgur.com/3/image", "image=" + image + "&type=base64");
     		root.requestManager.queue(req);
@@ -890,9 +1025,6 @@ function Model() {
 
     	this.sendImageURL = function (url) {
 
-    		// Don't track the actual image, just that they have triggered this method
-    		_gaq.push(['_trackEvent', 'Image', 'Send Image URL', 'Unauthenticated']);
-
     		var req = new signedRequest("POST", "https://api.imgur.com/3/image", "image=" + encode(url) + "&type=url");
     		root.requestManager.queue(req);
 
@@ -911,10 +1043,7 @@ function Model() {
     	
 
     	this.deleteImage = function (deletehash) {
-
-    		// Don't track the actual image, just that they have triggered this method
-    		_gaq.push(['_trackEvent', 'Image', 'Delete Image', 'Unauthenticated']);
-
+			
     		var req = new signedRequest("DELETE", "https://api.imgur.com/3/image/" + deletehash);
     		root.requestManager.queue(req);
 

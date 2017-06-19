@@ -19,9 +19,9 @@ p
     color: #fff;
 }
 
-.fancybox-lock .fancybox-overlay {
-	overflow-y: auto;
-	overflow-x: hidden;
+.hide 
+{
+	display: none;
 }
 
 .disable-hover,
@@ -123,15 +123,6 @@ header {
 			bottom: -2px;
 		}
 
-#donate-button {
-	position: absolute;
-	top: 11px;
-	left: calc( 14px + ( ( 94px + ( 100% - 471px ) ) - 185px ) / 2 );
-	width: 185px;
-	height: 18px;
-	display: block;
-}
-
 	nav {
 		display: table;
 	}
@@ -145,14 +136,9 @@ header {
 			display: table-cell;
 			vertical-align: middle;
 			color: #fff;
-			padding: 5px 20px 5px 5px;
+			padding: 8px 20px 5px 5px;
 			margin-top: 4px;
 			margin-right: 10px;
-		}
-		    
-		nav .hide 
-		{
-		   display: none;
 		}
 
 		nav .btn {
@@ -162,9 +148,7 @@ header {
 		}
 
 a#nav-connect,
-a#nav-download,
-a#nav-delete,
-a#nav-slideshow {
+a#nav-delete {
 	padding: 0 15px;
 	line-height: 40px;
 	box-sizing: border-box;
@@ -174,9 +158,7 @@ a#nav-slideshow {
 }
 
 	a#nav-connect:hover,
-	a#nav-download:hover,
-	a#nav-delete:hover,
-	a#nav-slideshow:hover {
+	a#nav-delete:hover {
 		text-decoration: underline;
 	}
 
@@ -196,14 +178,6 @@ a#nav-options {
 		width: 100%;
 		height: 100%;
 		-webkit-transition: all linear 1s;
-	}
-
-a#nav-options:hover {
-	background-color: #000;
-}
-
-	a#nav-options:hover .inner {
-		-webkit-transform: rotate(180deg);
 	}
 
 #albums
@@ -314,8 +288,6 @@ a#nav-options:hover {
     left: -99999px;
 }
 
-
-
 .album ul li a.action
 {
 	display: inline;
@@ -330,10 +302,6 @@ a#nav-options:hover {
 	box-sizing: border-box;
 	text-align: center;
     z-index: 2;
-}
-
-.album ul li iframe {
-	display: none;
 }
 
 .album ul li span.image-views {
@@ -451,43 +419,38 @@ a#nav-options:hover {
 	display: inline-block;
 }
 
-#webcam {
-	background: #000000;
-	padding: 25px;
-	box-sizing: border-box;
-	position: relative;
+.options-dialog {
+	width: 500px;
+	max-width: 80%;
+	height: 500px;
+	max-height: 80%;
+	border: none;
+	padding: 0;
 }
 
-	#webcam-video {
-		display: block;
-		margin: 10px auto;
+	.options-dialog::backdrop {
+		background: rgba(0, 0, 0, 0.8);
 	}
 
-	#webcam .cf {
-		position: relative;
+	.options-dialog iframe {
+		width: 100%;
+		height: 100%;
 	}
 
+	.options-close {
+		position: absolute;
+		top: 0px;
+		right: 0px;
+		padding: 5px;
+		border: none;
+		color: #fff;
+		background: transparent;
+		cursor: pointer;
+	}
 
-@-webkit-keyframes CountDown {
-  0%   { -webkit-transform: scale(1);}
-  50%   { -webkit-transform: scale(1.5); }
-  100% { -webkit-transform: scale(1); }
-}
-
-		#webcam .cf #webcam-countdown {
-			font-size: 20px;
-			color: #fff;
-			display: none;
-			text-align: center;
-			position: absolute;
-			bottom: 0;
-			left: 0;
-			width: 100%;
-		}
-
-		#webcam .cf #webcam-countdown.counting-down {
-			display: block;
-			 -webkit-animation: CountDown 1s infinite;
+		.options-close:after {
+			content:"\00d7";
+			font-size: 18px;
 		}
 
 #options

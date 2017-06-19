@@ -1,31 +1,22 @@
-/// <reference path="model.js" />
-
-var _gaq = _gaq || [];
-_gaq.push(['_setAccount', 'UA-41081662-9']);
-_gaq.push(['_trackPageview']);
-
-(function () {
-	var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
-	ga.src = 'https://ssl.google-analytics.com/ga.js';
-	var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
-})();
-
 var port = chrome.extension.connect({ name: "main" }),
     model = new Model(),
     EWrap,
     ENav,
     ENavConnect,
     ENavSelect,
-	ENavDownload,
-	ENavSlideShow,
+	ENavOptions,
 	ENavDelete,
     EAlbums,
+	EComments,
 	CurrentOffset = 0,
     CurrentAlbum,
     ECurrentAlbum,
     EStatusBar,
 	EStatusBarLink,
-	localStream;
+	// imgur doesn't give any information about how many items total are in an album so you keep going until you get nothing
+	// however, they don't do this for albums, where if you increment the page it will return the last set even if it's the same
+	// awesome
+	lastUserImagesSet;
 
 
 // Send async call to get the album images
@@ -67,7 +58,7 @@ function uploadFiles(e) {
 
 function makeImage(fileData) {
 
-    var img = UTILS.DOM.create('image');
+    var img = UTILS.D.create('image');
     img.src = fileData;
     
     img.style.display = 'none';
@@ -89,6 +80,27 @@ function makeImage(fileData) {
 }
 
 function friendlyNumber(n,d){x=(''+n).length,p=Math.pow,d=p(10,d);x-=x%3;return Math.round(n*d/p(10,x))/d+" kMGTPE"[x/3]}
+
+function albumEquals(a1, a2) {
+
+    if(a1.length !== a2.length) {
+        return false;
+    }
+    
+    var is = false;
+
+    a1.forEach(function(a,i) {
+        if(a["id"] === a2[i]["id"]) {
+            is = true;
+        } else {
+            is = false;
+            return;
+        }
+    });
+
+    return is;
+
+}
 
 function makeItem(fileData) {
 	
@@ -115,8 +127,13 @@ function makeItem(fileData) {
 
                 }).addEventListener('EVENT_ERROR', function() {
                   
-                    var notification = webkitNotifications.createNotification(e.link, "Error", "We were able to upload your image but not favourite it.");
-                    notification.show();
+                	chrome.notifications.create("", {
+
+                		type: "basic",
+                		iconUrl: e.link,
+                		title: "Error",
+                		message: "We were able to upload your image but not favourite it."
+                	}, function () { });
 
                 });
 
@@ -198,7 +215,7 @@ function deleteImage(image) {
 
     var elem = document.getElementById(image.id);
 
-    progress = UTILS.DOM.create('progress');
+    progress = UTILS.D.create('progress');
 
     elem.appendChild(progress);
 
@@ -227,12 +244,42 @@ function deleteImage(image) {
     }
 }
 
+/*
+Not implemented because the API doesn't handle it
+function unfavourite(image) {
+
+	var elem = document.getElementById(image.id);
+
+	progress = UTILS.D.create('progress');
+
+	elem.appendChild(progress);
+
+	var inner = elem.getElementsByClassName('inner')[0],
+        links = inner.getElementsByClassName('action');
+
+	for (var i = 0; i < links.length - 1; i++) {
+		inner.removeChild(links[i]);
+	}
+
+	elem.classList.add('loading');
+	
+	elem.style.cursor = 'progress';
+	model.authenticated.unfavouriteImage(image.id).addEventListener('EVENT_SUCCESS', function (e) {
+		if (elem) {
+			elem.style.cursor = 'default';
+			elem.parentNode.removeChild(elem);
+		}
+	});
+	
+}
+*/
+
 function makeAlbumItem(imageItem) {
 
-    var li = UTILS.DOM.create('li'),
-        inner = UTILS.DOM.create('div'),
-        img = UTILS.DOM.create('img'),
-        imgLink = UTILS.DOM.create('a');
+    var li = UTILS.D.create('li'),
+        inner = UTILS.D.create('div'),
+        img = UTILS.D.create('img'),
+        imgLink = UTILS.D.create('a');
        
 
     li.id = imageItem.id;
@@ -242,7 +289,7 @@ function makeAlbumItem(imageItem) {
     li.appendChild(inner);
 
     if (imageItem.views) {
-        var views = UTILS.DOM.create('span');
+        var views = UTILS.D.create('span');
         views.classList.add('image-views');
         views.innerHTML = friendlyNumber(imageItem.views, 1) + " view" + (imageItem.views !== 1 ? "s" : "");
         inner.appendChild(views);
@@ -252,16 +299,17 @@ function makeAlbumItem(imageItem) {
         li.classList.remove('loading');
     };
 
+    imgLink.href = imageItem.link;
+
     imgLink.onclick = function (e) {
     	e.preventDefault();
-		
-    	if (this.classList.contains('fancybox')) {
-    		return;
-    	}
-        chrome.tabs.create({ "url": imageItem.link, "selected": true });
+    	chrome.tabs.create({ "url": this.href, "selected": true });
     };
     
-    imgLink.href = imageItem.link;
+    
+    if (imageItem.title) {
+		imgLink.title = imageItem.title;
+	}
     imgLink.classList.add('image-link');
     imgLink.appendChild(img);
     inner.appendChild(imgLink);
@@ -269,11 +317,12 @@ function makeAlbumItem(imageItem) {
 
     if (!imageItem.is_album) {
 
-        var del = UTILS.DOM.create('a'),
-            copy = UTILS.DOM.create('a'),
-		    download = UTILS.DOM.create('a'),
-		    meme = UTILS.DOM.create('a'),
-            copyInput = UTILS.DOM.create('input');
+    	var del = UTILS.D.create('a'),
+            copy = UTILS.D.create('a'),
+		    download = UTILS.D.create('a'),
+		    meme = UTILS.D.create('a'),
+            copyInput = UTILS.D.create('input'),
+			unfav = UTILS.D.create('a');
 
         del.href = copy.href = "#";
         del.innerHTML = "delete";
@@ -289,6 +338,21 @@ function makeAlbumItem(imageItem) {
 
         };
 
+    	// Not implemented because the API doesn't handle it
+        unfav.href = copy.href = "#";
+        unfav.innerHTML = "unfavourite";
+        unfav.classList.add('image-delete');
+        unfav.classList.add('action');
+        unfav.onclick = function (e) {
+        	e.preventDefault();
+        	if (unfav.innerHTML == 'sure?') {
+        		unfavourite(imageItem);
+        	} else {
+        		unfav.innerHTML = 'sure?';
+        	}
+
+        };
+
         copy.innerHTML = "copy link";
         copy.classList.add('image-copy');
         copy.classList.add('action');
@@ -296,7 +360,7 @@ function makeAlbumItem(imageItem) {
             e.preventDefault();
             copyInput.select();
             document.execCommand("Copy");
-            var copyNotification = UTILS.DOM.create('span');
+            var copyNotification = UTILS.D.create('span');
 
             copyNotification.innerHTML = 'copied';
             copyNotification.classList.add('copy-notification');
@@ -309,7 +373,7 @@ function makeAlbumItem(imageItem) {
         copyInput.type = 'text';
         copyInput.value = imageItem.link;
 
-        meme.href = "http://www.winmeme.com?url=" + imageItem.link;
+        meme.href = "https://imgur.com/memegen/create/" + imageItem.id;
         meme.innerHTML = "meme";
         meme.classList.add('image-meme');
         meme.classList.add('action');
@@ -321,48 +385,76 @@ function makeAlbumItem(imageItem) {
         img.id = 'image-' + imageItem.id;
 
         var il = imageItem.link.split('.'),
-            ext = il.pop();
-        img.src = il.join('.') + 't.' + ext;
+            ext = il.pop(),
+			imageName = il.join('.');
+
+        var imageLinkHasH = imageName[imageName.length - 1] === 'h';
+
+    	// imgur thumbnail linking is all sorts of crazy
+    	// A gif may or may not have an "h" for "huge" added to its link
+    	// All gifs have a "gifv" property set even if they are not gifv
+
+    	// If they are a real gif (link doesn't have an h) leave it alone 
+    	// If they are a real gifv (link contains an h but gifv doesn't contain an h), remove the link h
+		// If they are a fake gifv (link contains an h and gifv contains an h) leave it alone
+
+    	// REAL GIF: http://i.imgur.com/8lAgRv1.gif
+    	// THUMB = Link (http://i.imgur.com/8lAgRv1.gif) + "t" = http://i.imgur.com/8lAgRv1t.gif
+    	// REAL GIFV: http://i.imgur.com/KJ0U7nj.gifv
+    	// THUMB = Link (http://i.imgur.com/KJ0U7njh.gif) - "h" + t = http://i.imgur.com/KJ0U7njt.gif
+    	// FAKE GIFV: http://i.imgur.com/9M2WG4h.gifv
+    	// THUMB = Link (http://i.imgur.com/9M2WG4h.gif) + "t" = http://i.imgur.com/9M2WG4ht.gif
+
+        if (imageItem.gifv && imageLinkHasH) {
+
+        	var gifVFixArr = imageItem.gifv.split('.'); gifVFixArr.pop();
+        	var gifVFix = gifVFixArr.join('.');
+        	var realGifV = gifVFix[gifVFix.length - 1] !== 'h';
+        	
+			// Real gifV doesn't have an h
+        	if (realGifV) {
+
+        		imageName = imageName.substring(0, imageName.length - 1);
+        		imgLink.href = imageItem.gifv;
+
+        	}
+        	
+        }
+
+        img.src = imageName + 't.' + ext;
 
         if (imageItem.deletehash) {
             li.setAttribute('data-deletehash', imageItem.deletehash);
         }
 
-        download.href = "#";
+        download.href = imageItem.link;
+		download.setAttribute("download", imageItem.id);
         download.innerHTML = "download";
         download.classList.add('image-download');
         download.classList.add('action');
-        download.onclick = function (e) {
-            e.preventDefault();
-            var existingIFrame = li.querySelectorAll('iframe')[0];
-            if (existingIFrame) {
-                li.removeChild(existingIFrame);
-            }
-
-            var iFrame = UTILS.DOM.create('iframe');
-            iFrame.src = "http://imgur.com/download/" + imageItem.id;
-            li.appendChild(iFrame);
-
-        };
 
         inner.appendChild(copyInput);
-        inner.appendChild(del);
+        if (CurrentAlbum !== "_userFavouritesAlbum") {
+        	inner.appendChild(del);
+        }
+        /* Not implemented because the API doesn't handle it
+        else {
+        	inner.appendChild(unfav);
+        }
+		*/
         inner.appendChild(copy);
         inner.appendChild(meme);
         inner.appendChild(download);
 
     } else {
 
-        var title = UTILS.DOM.create('div');
+        var title = UTILS.D.create('div');
         title.innerHTML = imageItem.title;
         title.classList.add('album-title');
         inner.appendChild(title);
 
-        img.src = 'http://i.imgur.com/' + imageItem.cover + 't.jpg';
-
-		// Can't load into iframe
-        imgLink.setAttribute('data-fancybox-href', 'http://i.imgur.com/' + imageItem.cover + '.jpg');
-
+        img.src = 'https://i.imgur.com/' + imageItem.cover + 't.jpg';
+        
     }
 
     
@@ -372,9 +464,9 @@ function makeAlbumItem(imageItem) {
 }
 
 function makeLoadingItem(image) {
-    var li = UTILS.DOM.create('li'),
-        inner = UTILS.DOM.create('div'),
-        progress = UTILS.DOM.create('progress');
+    var li = UTILS.D.create('li'),
+        inner = UTILS.D.create('div'),
+        progress = UTILS.D.create('progress');
 
     progress.setAttribute('min', '0');
     progress.setAttribute('max', '100');
@@ -394,8 +486,8 @@ function convertLoadingToAlbum(loadingItem, fullItem) {
 }
 
 function makeAlbum(album) {
-    var div = UTILS.DOM.create('div'),
-        ul = UTILS.DOM.create('ul');
+    var div = UTILS.D.create('div'),
+        ul = UTILS.D.create('ul');
 
     div.id = album.id;
     div.className = 'album';
@@ -423,8 +515,10 @@ function constructAlbumImages(images, album) {
 	}
 
     if (images && images.length > 0) {
-        for (var i = 0; i < images.length; i++) {
-            if (album.id !== '_thisComputer') {
+
+    	for (var i = 0; i < images.length; i++) {
+
+    		if (album.id === '_userAlbum' || album.id === '_userFavouritesAlbum') {
 
             	if (!!!document.getElementById(images[i].id)) {
             		ul.appendChild(makeAlbumItem(images[i]));
@@ -456,6 +550,8 @@ function fetchImages() {
 
 	setBodyLoading();
 
+	var callback = null;
+
 	(function (EAlbum) {
 
 		if (CurrentAlbum == "_thisComputer") {
@@ -466,14 +562,17 @@ function fetchImages() {
 		} else if (CurrentAlbum == "_userAlbum") {
 
 			// Show immediately
-			constructAlbumImages(model.authenticated.getUserImages(CurrentOffset), EAlbum);
+			var immediateImages = model.authenticated.getUserImages(CurrentOffset) || [];
+            constructAlbumImages(immediateImages, EAlbum);
 
-			model.authenticated.fetchUserImages(CurrentOffset)
-                .addEventListener('EVENT_COMPLETE', setBodyFinished)
+			callback = model.authenticated.fetchUserImages(CurrentOffset);
+            callback.addEventListener('EVENT_COMPLETE', setBodyFinished)
                 .addEventListener('EVENT_SUCCESS', function (images) {
 
                 	if (images.length > 0) {
-                		constructAlbumImages(images, EAlbum);
+                        if(!albumEquals(images, immediateImages)) {
+                		    constructAlbumImages(images, EAlbum);
+                        }
                 	} else {
                 		EAlbum.dataset.end = true;
                 	}
@@ -484,22 +583,31 @@ function fetchImages() {
                 	if (msg.status === 400) {
                 		criticalError();
                 	}
-                	
-                	var notification = webkitNotifications.createNotification("img/logo96.png", "Error", msg.text);
-                	notification.show();
+                    
+                	chrome.notifications.create("", {
+
+                		type: "basic",
+                		iconUrl: "img/logo96.png",
+                		title: "Error",
+                		message: msg.text || "Something went wrong. Try refreshing."
+                	}, function () { });
+
                 });
 
 
 		} else if (CurrentAlbum == "_userFavouritesAlbum") {
 
 			// Show immediately
-			constructAlbumImages(model.authenticated.getFavourites(CurrentOffset), EAlbum);
+            var immediateImages = model.authenticated.getFavourites(CurrentOffset) || [];
+			constructAlbumImages(immediateImages, EAlbum);
 
-			model.authenticated.fetchFavourites(CurrentOffset)
-                .addEventListener('EVENT_COMPLETE', setBodyFinished)
+			callback = model.authenticated.fetchFavourites(CurrentOffset);
+			callback.addEventListener('EVENT_COMPLETE', setBodyFinished)
                 .addEventListener('EVENT_SUCCESS', function (images) {
                 	if (images.length > 0) {
-                		constructAlbumImages(images, EAlbum);
+                        if(!albumEquals(images, immediateImages)) {
+                		    constructAlbumImages(images, EAlbum);
+                        }
                 	} else {
                 		EAlbum.dataset.end = true;
                 	}
@@ -510,39 +618,66 @@ function fetchImages() {
                 		criticalError();
                 	}
 
-                	var notification = webkitNotifications.createNotification("img/logo96.png", "Error", msg.text);
-                	notification.show();
+                	chrome.notifications.create("", {
+
+                		type: "basic",
+                		iconUrl: "img/logo96.png",
+                		title: "Error",
+                		message: msg.text || "Something went wrong. Try refreshing."
+                	}, function () { });
+
                 });
 
 
 		} else {
 
 			// Show immediately
-			constructAlbumImages(model.authenticated.getAlbumImages(CurrentAlbum, CurrentOffset), EAlbum);
+            var immediateImages = model.authenticated.getAlbumImages(CurrentAlbum, CurrentOffset) || []
+			constructAlbumImages(immediateImages, EAlbum);
+			
+			callback = model.authenticated.fetchAlbumImages(CurrentAlbum, CurrentOffset);
 
-			model.authenticated.fetchAlbumImages(CurrentAlbum, CurrentOffset)
-                .addEventListener('EVENT_COMPLETE', setBodyFinished)
+                callback.addEventListener('EVENT_COMPLETE', setBodyFinished)
                 .addEventListener('EVENT_SUCCESS', function (images) {
 
+                	if (!!lastUserImagesSet && images[0].id === lastUserImagesSet[0].id) {	
+                		EAlbum.dataset.end = true;
+                		return;
+                	}
+
                 	if (images.length > 0) {
-                		constructAlbumImages(images, EAlbum);
+                        if(!albumEquals(images, immediateImages)) {
+                		    constructAlbumImages(images, EAlbum);
+                        }
                 	} else {
                 		EAlbum.dataset.end = true;
                 	}
+
+                	lastUserImagesSet = images.slice(0);
 
                 })
                 .addEventListener('EVENT_ERROR', function (msg) {
                 	if (msg.status === 400) {
                 		criticalError();
                 	}
-                	var notification = webkitNotifications.createNotification("img/logo96.png", "Error", msg.text);
-                	notification.show();
+
+                	chrome.notifications.create("", {
+
+                		type: "basic",
+                		iconUrl: "img/logo96.png",
+                		title: "Error",
+                		message: msg.text || "Something went wrong. Try refreshing."
+                	}, function () { });
+
                 });
 
 
 		}
 
 	})(ECurrentAlbum);
+
+	return callback;
+
 }
 
 // Can be called on init or change, or infinite scroll
@@ -581,7 +716,7 @@ function changeAlbum(albumID) {
     }
 
     CurrentAlbum = albumID;
-    ECurrentAlbum = UTILS.DOM.id(CurrentAlbum);
+    ECurrentAlbum = UTILS.D.id(CurrentAlbum);
     ECurrentAlbum.classList.add('active')
 	ECurrentAlbum.dataset.end = false;
 
@@ -608,12 +743,12 @@ function initAuthenticated() {
     ENavSelect.classList.remove('hide');
     var albums = model.authenticated.getAlbums();
 
-    var unsortedOpt = UTILS.DOM.create('option');
+    var unsortedOpt = UTILS.D.create('option');
     unsortedOpt.value = '_thisComputer';
     unsortedOpt.text = 'This Computer';
     ENavSelect.appendChild(unsortedOpt);
 
-    var defaultAlbumOpt = UTILS.DOM.create('option');
+    var defaultAlbumOpt = UTILS.D.create('option');
     defaultAlbumOpt.value = '_userAlbum';
     defaultAlbumOpt.text = model.authenticated.getAccount().url;
     ENavSelect.appendChild(defaultAlbumOpt);
@@ -621,7 +756,7 @@ function initAuthenticated() {
     var EUserAlbum = makeAlbum({ id: '_userAlbum' });
     EAlbums.appendChild(EUserAlbum);
 
-    var favouritesOpt = UTILS.DOM.create('option');
+    var favouritesOpt = UTILS.D.create('option');
     favouritesOpt.value = '_userFavouritesAlbum';
     favouritesOpt.text = 'My Favourites';
     ENavSelect.appendChild(favouritesOpt);
@@ -631,14 +766,14 @@ function initAuthenticated() {
 
     if (albums) {
 
-        var albumsOptGroup = UTILS.DOM.create('optgroup');
+        var albumsOptGroup = UTILS.D.create('optgroup');
         albumsOptGroup.setAttribute('label', 'Albums');
 
         for (var i = 0; i < albums.length; i++) {
 
             var EAlbum = makeAlbum(albums[i]);
 
-            var opt = UTILS.DOM.create('option');
+            var opt = UTILS.D.create('option');
             opt.value = albums[i].id;
             opt.text = albums[i].title || "(API processing)";
 
@@ -649,11 +784,11 @@ function initAuthenticated() {
         ENavSelect.appendChild(albumsOptGroup);
     }
 	
-    var newAlbumOpt = UTILS.DOM.create('option');
+    var newAlbumOpt = UTILS.D.create('option');
     newAlbumOpt.value = '_newAlbum';
     newAlbumOpt.text = '<New Album>';
     albumsOptGroup.appendChild(newAlbumOpt);
-	
+
 }
 
 port.onMessage.addListener(function (msg) {
@@ -661,20 +796,35 @@ port.onMessage.addListener(function (msg) {
     window.location.reload();
 });
 
-$(document).ready(function () {
+function checkForMoreImages() {
 
+	var callback = null;
+	// Could be out of sync with cache, but that's ok
+	if ((CurrentAlbum === "_userAlbum" || CurrentAlbum === "_userFavouritesAlbum")
+		&& ECurrentAlbum.dataset.end === 'false'
+		&& !isBodyLoading()
+	) {
 
-    $("#nav-options").fancybox();
+		CurrentOffset++;
+		callback = fetchImages();
 
-	EAlbums = UTILS.DOM.id('albums');
-	EWrap = UTILS.DOM.id('wrap');
+	}
+
+	return callback;
+
+}
+
+window.onload = function() {
+
+    EAlbums = UTILS.D.id('albums');
+    EComments = UTILS.D.id('comments');
+	EWrap = UTILS.D.id('wrap');
 	ENav = document.getElementsByTagName('nav')[0];
-	ENavConnect = UTILS.DOM.id('nav-connect');
-	ENavDownload = UTILS.DOM.id('nav-download');
-	ENavDelete = UTILS.DOM.id('nav-delete');
-	ENavSlideShow = UTILS.DOM.id('nav-slideshow');
-	ENavSelect = UTILS.DOM.id('nav-albums');
-	EStatusBar = UTILS.DOM.id('status-bar');
+	ENavConnect = UTILS.D.id('nav-connect');
+	ENavOptions = UTILS.D.id('nav-options');
+	ENavDelete = UTILS.D.id('nav-delete');
+	ENavSelect = UTILS.D.id('nav-albums');
+	EStatusBar = UTILS.D.id('status-bar');
 	EStatusBarLink = EStatusBar.querySelectorAll('span')[0];
 
 	document.documentElement.ondrop = function (e) {
@@ -725,22 +875,37 @@ $(document).ready(function () {
 		port.postMessage({ CMD: "get_user" });
 	};
 
+	ENavOptions.onclick = function(e) {
+
+		e.preventDefault();
+		var dialog = UTILS.D.create('dialog');
+		var iframe = UTILS.D.create('iframe');
+		var close = UTILS.D.create('button');
+		
+		close.classList.add("options-close");
+		close.onclick = function() {
+			dialog.close();
+		}
+
+		iframe.src = this.href;
+
+		dialog.classList.add("options-dialog");
+		dialog.appendChild(iframe);
+		dialog.appendChild(close);
+		dialog.onclose = function() {
+			body.removeChild(dialog);
+		}
+		
+		body.appendChild(dialog);
+		dialog.showModal();
+
+		
+
+	};
+
 	ENavSelect.onchange = function () {
 		changeAlbum(this.value);
 	};
-
-	ENavDownload.onclick = function (e) {
-		e.preventDefault();
-		var downloadLinks = ECurrentAlbum.querySelectorAll('.image-download');
-
-		var evObj = document.createEvent('MouseEvents');
-		evObj.initEvent('click', true, false);
-
-		for (var i = 0; i < downloadLinks.length; i++) {
-			downloadLinks[i].dispatchEvent(evObj);
-		}
-
-	}
 
 	ENavDelete.onclick = function (e) {
 		e.preventDefault();
@@ -771,20 +936,14 @@ $(document).ready(function () {
 
 	changeAlbum(model.currentAlbum.get());
 
-	window.onscroll = function () {
+	
 
-		// Could be out of sync with cache, but that's ok
-		if (document.body.scrollTop + window.innerHeight >= (document.body.clientHeight - 100)
-			&& CurrentAlbum !== "_thisComputer"
-			&& ECurrentAlbum.dataset.end === 'false'
-			&& !isBodyLoading()
-		) {
-			
-			CurrentOffset++;
-			fetchImages();
-
+	window.onscroll = function() {
+	
+		if(document.body.scrollTop + window.innerHeight >= (document.body.clientHeight - 100)) {
+			checkForMoreImages();
 		}
-
+		
 	}
 
 	var body = document.body,
@@ -801,4 +960,4 @@ $(document).ready(function () {
 		}, 500);
 	}, false);
 
-});
+};
