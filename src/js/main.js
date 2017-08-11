@@ -299,6 +299,10 @@ function makeAlbumItem(imageItem) {
         li.classList.remove('loading');
     };
 
+    img.onerror = function () {
+        li.classList.remove('loading');
+    }
+
     imgLink.href = imageItem.link;
 
     imgLink.onclick = function (e) {
@@ -940,7 +944,7 @@ window.onload = function() {
 
 	window.onscroll = function() {
 	
-		if(document.body.scrollTop + window.innerHeight >= (document.body.clientHeight - 100)) {
+		if(document.documentElement.scrollTop + window.innerHeight >= (document.body.clientHeight - 100)) {
 			checkForMoreImages();
 		}
 		
