@@ -944,7 +944,8 @@ window.onload = function() {
 
 	window.onscroll = function() {
 	
-		if(document.documentElement.scrollTop + window.innerHeight >= (document.body.clientHeight - 100)) {
+        var de = (document.documentElement || document.body.parentNode || document.body);
+		if (de.scrollTop + window.innerHeight >= (document.body.clientHeight - 100)) {
 			checkForMoreImages();
 		}
 		
